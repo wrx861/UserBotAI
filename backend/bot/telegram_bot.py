@@ -615,6 +615,12 @@ class SupportAIBot:
         username = message.from_user.username if message.from_user else None
         is_voice_input = False
 
+        # Проверяем auto_reply — если выключен, ИИ не отвечает
+        config_doc = await self._db_instance.bot_config.find_one({"_id": "main"}, {"_id": 0})
+        if config_doc and not config_doc.get("auto_reply", True):
+            logger.info(f"Авто-ответ выключен, пропуск сообщения от {chat_id}")
+            return
+
         if await self.database.is_silenced(chat_id):
             logger.info(f"Чат {chat_id} заглушен, пропуск")
             return
