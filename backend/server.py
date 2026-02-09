@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Request, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,11 +6,16 @@ import os
 import logging
 import asyncio
 import aiofiles
+import hashlib
+import hmac
+import time
+import secrets
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+import jwt as pyjwt
 
 from bot.database import BotDatabase
 from bot.media_handler import list_media_files
@@ -164,6 +169,88 @@ class VoiceSettingsResponse(BaseModel):
     voices: list = []
 
 
+# ── Auth модели ─────────────────────────────────────────
+class AuthSetupRequest(BaseModel):
+    bot_token: str
+    bot_username: str
+
+class TelegramAuthRequest(BaseModel):
+    id: int
+    first_name: str
+    last_name: Optional[str] = ""
+    username: Optional[str] = ""
+    photo_url: Optional[str] = ""
+    auth_date: int
+    hash: str
+
+
+# ── Auth хелперы ────────────────────────────────────────
+async def get_jwt_secret():
+    """Получить или создать JWT secret из БД."""
+    doc = await db.auth_config.find_one({"_id": "jwt_secret"})
+    if doc:
+        return doc["secret"]
+    secret = secrets.token_hex(32)
+    await db.auth_config.update_one(
+        {"_id": "jwt_secret"},
+        {"$set": {"secret": secret}},
+        upsert=True,
+    )
+    return secret
+
+
+async def get_auth_setup():
+    """Получить настройки auth (bot_token, bot_username)."""
+    doc = await db.auth_config.find_one({"_id": "auth_setup"})
+    if not doc:
+        return None
+    return doc
+
+
+def verify_telegram_auth(data: dict, bot_token: str) -> bool:
+    """Проверить подпись Telegram Login Widget."""
+    check_hash = data.pop("hash", "")
+    # Сортируем и формируем строку проверки
+    data_check_arr = sorted([f"{k}={v}" for k, v in data.items() if v is not None and v != ""])
+    data_check_string = "\n".join(data_check_arr)
+    # SHA256(bot_token) → secret key
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    # HMAC-SHA256
+    computed_hash = hmac.new(
+        secret_key,
+        data_check_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return computed_hash == check_hash
+
+
+async def get_current_user(request: Request):
+    """Dependency — проверяет JWT и возвращает пользователя или None."""
+    # Если auth не настроен → пускаем всех
+    auth_setup = await get_auth_setup()
+    if not auth_setup:
+        return None
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+
+    token = auth_header.split(" ", 1)[1]
+    try:
+        jwt_secret = await get_jwt_secret()
+        payload = pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+        return payload
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Сессия истекла")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Невалидный токен")
+
+
+async def require_auth(request: Request):
+    """Dependency — требует авторизации если auth настроен."""
+    return await get_current_user(request)
+
+
 # ── Хелперы ──────────────────────────────────────────────
 async def get_telegram_creds():
     """Get TG creds from MongoDB first, fallback to env."""
@@ -225,6 +312,158 @@ def create_ai_client_from_settings(settings):
 
 
 # ── API маршруты ────────────────────────────────────────
+
+# ── Auth маршруты (не требуют авторизации) ──────────────
+@api_router.get("/auth/config")
+async def get_auth_config():
+    """Проверить настроена ли авторизация."""
+    auth_setup = await get_auth_setup()
+    if not auth_setup:
+        return {"configured": False, "bot_username": ""}
+    return {
+        "configured": True,
+        "bot_username": auth_setup.get("bot_username", ""),
+    }
+
+
+@api_router.post("/auth/setup")
+async def setup_auth(req: AuthSetupRequest):
+    """Первоначальная настройка: сохранить bot_token + bot_username."""
+    existing = await get_auth_setup()
+    if existing:
+        # Если уже настроено — разрешаем менять только авторизованным
+        # Но для первой настройки — пропускаем
+        raise HTTPException(status_code=400, detail="Авторизация уже настроена")
+
+    await db.auth_config.update_one(
+        {"_id": "auth_setup"},
+        {"$set": {
+            "bot_token": req.bot_token,
+            "bot_username": req.bot_username.replace("@", "").strip(),
+        }},
+        upsert=True,
+    )
+    logger.info(f"Auth настроен: @{req.bot_username}")
+    return {"status": "ok"}
+
+
+@api_router.post("/auth/telegram")
+async def auth_telegram(req: TelegramAuthRequest):
+    """Верификация данных Telegram Login Widget и выдача JWT."""
+    auth_setup = await get_auth_setup()
+    if not auth_setup:
+        raise HTTPException(status_code=400, detail="Авторизация не настроена")
+
+    bot_token = auth_setup["bot_token"]
+
+    # Проверяем auth_date (не старше 5 минут)
+    if abs(time.time() - req.auth_date) > 300:
+        raise HTTPException(status_code=401, detail="Данные авторизации устарели")
+
+    # Собираем данные для проверки хеша
+    auth_data = {}
+    auth_data["id"] = req.id
+    auth_data["first_name"] = req.first_name
+    if req.last_name:
+        auth_data["last_name"] = req.last_name
+    if req.username:
+        auth_data["username"] = req.username
+    if req.photo_url:
+        auth_data["photo_url"] = req.photo_url
+    auth_data["auth_date"] = req.auth_date
+
+    # Проверяем подпись
+    if not verify_telegram_auth(dict(auth_data, hash=req.hash), bot_token):
+        raise HTTPException(status_code=401, detail="Невалидная подпись")
+
+    # Проверяем — есть ли уже admin?
+    admin_doc = await db.auth_config.find_one({"_id": "admin_user"})
+    if admin_doc:
+        # Проверяем что это тот же пользователь
+        if admin_doc["telegram_id"] != req.id:
+            raise HTTPException(status_code=403, detail="Доступ запрещён. Вы не являетесь администратором.")
+    else:
+        # Первый вход — сохраняем как админа
+        await db.auth_config.update_one(
+            {"_id": "admin_user"},
+            {"$set": {
+                "telegram_id": req.id,
+                "first_name": req.first_name,
+                "last_name": req.last_name or "",
+                "username": req.username or "",
+                "photo_url": req.photo_url or "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        logger.info(f"Admin установлен: {req.first_name} (ID: {req.id})")
+
+    # Генерируем JWT (срок 7 дней)
+    jwt_secret = await get_jwt_secret()
+    payload = {
+        "telegram_id": req.id,
+        "first_name": req.first_name,
+        "username": req.username or "",
+        "photo_url": req.photo_url or "",
+        "exp": int(time.time()) + 7 * 24 * 3600,
+        "iat": int(time.time()),
+    }
+    token = pyjwt.encode(payload, jwt_secret, algorithm="HS256")
+
+    return {
+        "token": token,
+        "user": {
+            "telegram_id": req.id,
+            "first_name": req.first_name,
+            "username": req.username or "",
+            "photo_url": req.photo_url or "",
+        },
+    }
+
+
+@api_router.get("/auth/me")
+async def auth_me(request: Request):
+    """Проверить текущую сессию."""
+    auth_setup = await get_auth_setup()
+    if not auth_setup:
+        return {"authenticated": False, "auth_required": False}
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return {"authenticated": False, "auth_required": True}
+
+    token = auth_header.split(" ", 1)[1]
+    try:
+        jwt_secret = await get_jwt_secret()
+        payload = pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+        return {
+            "authenticated": True,
+            "auth_required": True,
+            "user": {
+                "telegram_id": payload["telegram_id"],
+                "first_name": payload["first_name"],
+                "username": payload.get("username", ""),
+                "photo_url": payload.get("photo_url", ""),
+            },
+        }
+    except Exception:
+        return {"authenticated": False, "auth_required": True}
+
+
+@api_router.post("/auth/logout")
+async def auth_logout():
+    """Выход (клиент удаляет токен)."""
+    return {"status": "ok"}
+
+
+@api_router.post("/auth/reset")
+async def auth_reset(request: Request):
+    """Сбросить настройки авторизации (только для админа)."""
+    user = await get_current_user(request)
+    await db.auth_config.delete_many({})
+    logger.info("Auth настройки сброшены")
+    return {"status": "ok"}
+
 
 @api_router.get("/")
 async def root():
@@ -854,6 +1093,56 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Auth Middleware ─────────────────────────────────────
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Защита /api/bot/* маршрутов — если auth настроен, требуем JWT."""
+    path = request.url.path
+
+    # Пропускаем auth эндпоинты, корень API, статику
+    if (
+        path.startswith("/api/auth/")
+        or path == "/api/"
+        or path == "/api"
+        or not path.startswith("/api/")
+    ):
+        return await call_next(request)
+
+    # Проверяем настроена ли авторизация
+    auth_setup = await get_auth_setup()
+    if not auth_setup:
+        # Auth не настроен — пропускаем
+        return await call_next(request)
+
+    # Auth настроен — проверяем JWT
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Требуется авторизация"},
+        )
+
+    token = auth_header.split(" ", 1)[1]
+    try:
+        jwt_secret = await get_jwt_secret()
+        pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Сессия истекла"},
+        )
+    except pyjwt.InvalidTokenError:
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Невалидный токен"},
+        )
+
+    return await call_next(request)
 
 
 # ── Жизненный цикл ───────────────────────────────────────────
