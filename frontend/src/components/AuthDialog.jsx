@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { KeyRound, Phone, Hash, Lock, Loader2, CheckCircle, RefreshCw, ChevronDown } from "lucide-react";
 
 export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idle", defaultOpen = false }) {
@@ -15,22 +16,10 @@ export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idl
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/bot/auth/send-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone_number: phoneNumber }),
-      });
-      let data;
-      try {
-        data = await res.clone().json();
-      } catch {
-        const text = await res.text();
-        throw new Error(text || `Ошибка сервера (${res.status})`);
-      }
-      if (!res.ok) throw new Error(data.detail || "Ошибка отправки кода");
+      await axios.post(`${API}/bot/auth/send-code`, { phone_number: phoneNumber });
       setStep("code_sent");
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.detail || e.message || "Ошибка отправки кода");
     }
     setLoading(false);
   };
@@ -39,27 +28,15 @@ export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idl
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/bot/auth/verify-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone_number: phoneNumber, code }),
-      });
-      let data;
-      try {
-        data = await res.clone().json();
-      } catch {
-        const text = await res.text();
-        throw new Error(text || `Ошибка сервера (${res.status})`);
-      }
-      if (!res.ok) throw new Error(data.detail || "Неверный код");
-      if (data.status === "2fa_required") {
+      const res = await axios.post(`${API}/bot/auth/verify-code`, { phone_number: phoneNumber, code });
+      if (res.data.status === "2fa_required") {
         setStep("2fa");
       } else {
         setStep("success");
         setTimeout(() => onComplete?.(), 2000);
       }
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.detail || e.message || "Неверный код");
     }
     setLoading(false);
   };
@@ -68,23 +45,11 @@ export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idl
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/bot/auth/verify-2fa`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      let data;
-      try {
-        data = await res.clone().json();
-      } catch {
-        const text = await res.text();
-        throw new Error(text || `Ошибка сервера (${res.status})`);
-      }
-      if (!res.ok) throw new Error(data.detail || "Неверный пароль");
+      await axios.post(`${API}/bot/auth/verify-2fa`, { password });
       setStep("success");
       setTimeout(() => onComplete?.(), 2000);
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.detail || e.message || "Ошибка 2FA");
     }
     setLoading(false);
   };
@@ -102,12 +67,12 @@ export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idl
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-2">
-          <KeyRound className="h-4 w-4 text-[#00F0FF]" />
+          <KeyRound className="h-4 w-4 text-amber-400" />
           <span className="text-xs font-medium uppercase tracking-widest text-neutral-500">
             Авторизация Telegram
           </span>
           {statusLabel && (
-            <span className="text-[10px] font-mono text-emerald-500">{statusLabel}</span>
+            <span className="text-[10px] font-mono text-neutral-600">{statusLabel}</span>
           )}
         </div>
         <ChevronDown className={`h-4 w-4 text-neutral-600 transition-transform duration-200 ${isOpen ? "rotate-0" : "-rotate-90"}`} />
@@ -115,148 +80,98 @@ export default function AuthDialog({ phoneNumber, onComplete, initialStep = "idl
 
       {isOpen && (
         <div className="p-4 space-y-4 border-t border-white/[0.06]">
-          {step === "success" ? (
-            <div
-              data-testid="auth-success"
-              className="flex flex-col items-center py-6 gap-3"
-            >
-              <CheckCircle className="h-8 w-8 text-emerald-500" />
-              <p className="font-mono text-sm text-emerald-400">Авторизация успешна!</p>
-              <p className="font-mono text-xs text-neutral-500">Бот запускается...</p>
+          {error && (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 font-mono">
+              {error}
             </div>
-          ) : step === "idle" || step === "sending" ? (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Phone className="h-3.5 w-3.5 text-neutral-500" />
-                  <span className="text-xs uppercase tracking-wider text-neutral-400">
-                    Номер телефона
-                  </span>
+          )}
+
+          {step === "success" ? (
+            <div className="flex items-center gap-3 py-4 justify-center">
+              <CheckCircle className="h-6 w-6 text-emerald-400" />
+              <span className="text-sm text-emerald-400 font-mono">Авторизация успешна!</span>
+            </div>
+          ) : step === "2fa" ? (
+            <div className="space-y-3">
+              <p className="text-xs text-neutral-400 font-mono">Введите пароль двухфакторной аутентификации:</p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Пароль 2FA"
+                    className="w-full bg-neutral-900/50 border border-white/[0.06] text-white text-sm font-mono
+                      placeholder:text-neutral-700 pl-10 pr-4 py-2.5 focus:outline-none focus:border-amber-500/40"
+                    onKeyDown={(e) => e.key === "Enter" && verify2FA()}
+                  />
                 </div>
-                <div
-                  data-testid="auth-phone-display"
-                  className="font-mono text-sm px-3 py-2.5 border border-white/[0.06] text-[#00F0FF]"
-                  style={{ background: "rgba(0,0,0,0.4)" }}
+                <button
+                  onClick={verify2FA}
+                  disabled={loading || !password}
+                  className="px-4 py-2.5 bg-amber-500 text-black text-xs font-bold uppercase
+                    hover:bg-amber-400 disabled:opacity-30 flex items-center gap-1"
                 >
-                  {phoneNumber || "Не указан — заполните в настройках Telegram"}
-                </div>
+                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+                  Подтвердить
+                </button>
               </div>
-              <p className="font-mono text-xs text-neutral-500">
-                Код подтверждения будет отправлен в Telegram на этот номер.
-              </p>
-              <button
-                data-testid="auth-send-code-btn"
-                onClick={sendCode}
-                disabled={loading || !phoneNumber}
-                className="w-full py-2.5 text-xs font-bold uppercase tracking-widest
-                  bg-[#00F0FF] text-black hover:bg-white transition-colors
-                  disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Отправить код"
-                )}
-              </button>
-            </>
-          ) : step === "code_sent" || step === "verifying" ? (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Hash className="h-3.5 w-3.5 text-neutral-500" />
-                  <span className="text-xs uppercase tracking-wider text-neutral-400">
-                    Код из Telegram
-                  </span>
-                </div>
-                <input
-                  data-testid="auth-code-input"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && verifyCode()}
-                  placeholder="12345"
-                  className="w-full font-mono text-lg px-3 py-2.5 bg-black/50 border border-white/[0.06]
-                    focus:border-[#00F0FF]/40 outline-none text-center text-[#00F0FF]
-                    placeholder:text-neutral-700 tracking-[0.5em]"
-                  maxLength={6}
-                  autoFocus
-                />
-              </div>
-              <p className="font-mono text-xs text-neutral-500">
-                Введите код, который пришёл в Telegram.
+            </div>
+          ) : step === "code_sent" ? (
+            <div className="space-y-3">
+              <p className="text-xs text-neutral-400 font-mono">
+                Код отправлен в Telegram на номер{" "}
+                <span className="text-cyan-400">{phoneNumber}</span>
               </p>
               <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="12345"
+                    maxLength={6}
+                    className="w-full bg-neutral-900/50 border border-white/[0.06] text-white text-sm font-mono
+                      placeholder:text-neutral-700 pl-10 pr-4 py-2.5 focus:outline-none focus:border-amber-500/40 tracking-[0.5em]"
+                    onKeyDown={(e) => e.key === "Enter" && verifyCode()}
+                  />
+                </div>
                 <button
-                  data-testid="auth-verify-code-btn"
                   onClick={verifyCode}
                   disabled={loading || code.length < 4}
-                  className="flex-1 py-2.5 text-xs font-bold uppercase tracking-widest
-                    bg-[#00F0FF] text-black hover:bg-white transition-colors
-                    disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="px-4 py-2.5 bg-amber-500 text-black text-xs font-bold uppercase
+                    hover:bg-amber-400 disabled:opacity-30 flex items-center gap-1"
                 >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "Подтвердить"
-                  )}
+                  {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                  Проверить
                 </button>
-                <button
-                  data-testid="auth-resend-btn"
-                  onClick={() => { setCode(""); setError(""); sendCode(); }}
-                  disabled={loading}
-                  className="px-3 py-2.5 text-xs font-mono uppercase tracking-widest
-                    border border-white/[0.06] text-neutral-500 hover:text-[#00F0FF]
-                    hover:border-[#00F0FF]/30 transition-colors disabled:opacity-50"
-                  title="Отправить код повторно"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </>
-          ) : step === "2fa" ? (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Lock className="h-3.5 w-3.5 text-amber-500" />
-                  <span className="text-xs uppercase tracking-wider text-neutral-400">
-                    Двухфакторная аутентификация
-                  </span>
-                </div>
-                <input
-                  data-testid="auth-2fa-input"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && verify2FA()}
-                  placeholder="Пароль 2FA"
-                  className="w-full font-mono text-sm px-3 py-2.5 bg-black/50 border border-white/[0.06]
-                    focus:border-amber-500/40 outline-none text-amber-400
-                    placeholder:text-neutral-700"
-                  autoFocus
-                />
               </div>
               <button
-                data-testid="auth-verify-2fa-btn"
-                onClick={verify2FA}
-                disabled={loading || !password}
-                className="w-full py-2.5 text-xs font-bold uppercase tracking-widest
-                  bg-amber-500 text-black hover:bg-amber-400 transition-colors
-                  disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={sendCode}
+                disabled={loading}
+                className="text-[10px] font-mono text-neutral-600 hover:text-neutral-400 flex items-center gap-1"
               >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Войти"
-                )}
+                <RefreshCw className="h-3 w-3" />
+                Отправить код повторно
               </button>
-            </>
-          ) : null}
-
-          {error && (
-            <div
-              data-testid="auth-error"
-              className="font-mono text-xs text-red-400 px-3 py-2 border border-red-500/20 bg-red-500/5"
-            >
-              {error}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-neutral-400 font-mono">
+                Отправим код авторизации на номер{" "}
+                <span className="text-cyan-400">{phoneNumber || "не указан"}</span>
+              </p>
+              <button
+                onClick={sendCode}
+                disabled={loading || !phoneNumber}
+                className="w-full py-2.5 bg-amber-500 text-black text-xs font-bold uppercase tracking-widest
+                  hover:bg-amber-400 disabled:opacity-30 flex items-center justify-center gap-2"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                Отправить код
+              </button>
             </div>
           )}
         </div>
