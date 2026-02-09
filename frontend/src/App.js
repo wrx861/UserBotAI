@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import "@/App.css";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
-import { LayoutDashboard, Settings } from "lucide-react";
+import { LayoutDashboard, Settings, Power, PowerOff } from "lucide-react";
 
 import Header from "./components/Header";
 import StatusCards from "./components/StatusCards";
@@ -86,6 +86,19 @@ function App() {
       toast.error("Ошибка запуска бота");
     }
   };
+
+  const handleToggleAutoReply = async () => {
+    const newValue = !(config?.auto_reply ?? true);
+    try {
+      await axios.post(`${API}/bot/config`, { auto_reply: newValue });
+      toast.success(newValue ? "ИИ включён" : "ИИ отключён");
+      fetchAll();
+    } catch {
+      toast.error("Ошибка переключения");
+    }
+  };
+
+  const autoReplyEnabled = config?.auto_reply ?? true;
 
   const needsAuth = status?.auth_status === "needs_auth";
   const authCodeSent = status?.auth_status === "code_sent";
@@ -184,6 +197,53 @@ function App() {
 
             {/* Правая колонка */}
             <div className="lg:col-span-3 space-y-4">
+              {/* Кнопка Вкл/Выкл ИИ */}
+              <div
+                data-testid="ai-toggle-card"
+                className="border border-white/[0.06] p-4"
+                style={{ background: "#0A0A0A" }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-mono text-[11px] text-neutral-500 uppercase tracking-widest">
+                    Авто-ответ ИИ
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest ${
+                      autoReplyEnabled ? "text-emerald-400" : "text-red-400"
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        autoReplyEnabled ? "bg-emerald-400 beacon-active" : "bg-red-400"
+                      }`}
+                    />
+                    {autoReplyEnabled ? "Активен" : "Отключён"}
+                  </span>
+                </div>
+                <button
+                  data-testid="ai-toggle-btn"
+                  onClick={handleToggleAutoReply}
+                  className={`w-full py-3 text-xs font-bold uppercase tracking-widest
+                    flex items-center justify-center gap-2 transition-all duration-200 ${
+                    autoReplyEnabled
+                      ? "bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50"
+                      : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/50"
+                  }`}
+                >
+                  {autoReplyEnabled ? (
+                    <>
+                      <PowerOff className="h-4 w-4" />
+                      Отключить
+                    </>
+                  ) : (
+                    <>
+                      <Power className="h-4 w-4" />
+                      Включить
+                    </>
+                  )}
+                </button>
+              </div>
+
               {sessionReady && !status?.is_running && (
                 <div
                   data-testid="start-bot-card"
