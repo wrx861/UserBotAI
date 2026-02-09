@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import axios from "axios";
 import {
   Upload, Trash2, Save, Film, ImageIcon, FileText,
   FolderOpen, Loader2, Edit3, ChevronDown
@@ -24,9 +25,8 @@ export default function MediaManager({ apiUrl, onRefresh, defaultOpen = false })
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch(`${apiUrl}/bot/media-templates`);
-      const data = await res.json();
-      setTemplates(data);
+      const res = await axios.get(`${apiUrl}/bot/media-templates`);
+      setTemplates(res.data);
     } catch {}
   };
 
@@ -42,10 +42,7 @@ export default function MediaManager({ apiUrl, onRefresh, defaultOpen = false })
       const formData = new FormData();
       formData.append("file", file);
       try {
-        await fetch(`${apiUrl}/bot/media/upload`, {
-          method: "POST",
-          body: formData,
-        });
+        await axios.post(`${apiUrl}/bot/media/upload`, formData);
       } catch {}
     }
     setUploading(false);
@@ -56,7 +53,7 @@ export default function MediaManager({ apiUrl, onRefresh, defaultOpen = false })
 
   const handleDelete = async (tag) => {
     try {
-      await fetch(`${apiUrl}/bot/media/${tag}`, { method: "DELETE" });
+      await axios.delete(`${apiUrl}/bot/media/${tag}`);
       fetchTemplates();
       onRefresh?.();
     } catch {}
@@ -65,11 +62,7 @@ export default function MediaManager({ apiUrl, onRefresh, defaultOpen = false })
   const handleSaveRule = async (tag) => {
     setSavingRule(true);
     try {
-      await fetch(`${apiUrl}/bot/media/rules`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag, description: editDesc }),
-      });
+      await axios.post(`${apiUrl}/bot/media/rules`, { tag, description: editDesc });
       setEditingTag(null);
       fetchTemplates();
     } catch {}

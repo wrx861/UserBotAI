@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import axios from "axios";
 import { Mic, Volume2, Loader2, CheckCircle, Key, Eye, EyeOff, AlertCircle, Save, ChevronDown, Play, Square, User } from "lucide-react";
 
 // Label translations to Russian
@@ -262,9 +263,9 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
   const [language, setLanguage] = useState("ru");
 
   const fetchSettings = useCallback(() => {
-    fetch(`${apiUrl}/bot/settings/voice`)
-      .then((r) => r.json())
-      .then((data) => {
+    axios.get(`${apiUrl}/bot/settings/voice`)
+      .then((res) => {
+        const data = res.data;
         setSettings(data);
         setVoiceEnabled(data.voice_enabled || false);
         setVoiceMode(data.voice_mode || "voice_only");
@@ -296,15 +297,11 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
       if (includeKey && apiKey) {
         body.elevenlabs_api_key = apiKey;
       }
-      await fetch(`${apiUrl}/bot/settings/voice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      await axios.post(`${apiUrl}/bot/settings/voice`, body);
       setSaved(true);
       if (includeKey) {
         setApiKey("");
-        fetchSettings(); // Refresh to get new voices list
+        fetchSettings();
       }
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {

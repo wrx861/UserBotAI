@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 import { Brain, Save, Loader2, RotateCcw, ChevronDown } from "lucide-react";
 
 export default function PromptEditor({ apiUrl, defaultOpen = false }) {
@@ -9,11 +10,10 @@ export default function PromptEditor({ apiUrl, defaultOpen = false }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${apiUrl}/bot/settings/prompt`)
-      .then(r => r.json())
-      .then(data => {
-        setPrompt(data.prompt || "");
-        setDefaultPrompt(data.default_prompt || "");
+    axios.get(`${apiUrl}/bot/settings/prompt`)
+      .then(res => {
+        setPrompt(res.data.prompt || "");
+        setDefaultPrompt(res.data.default_prompt || "");
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -22,11 +22,7 @@ export default function PromptEditor({ apiUrl, defaultOpen = false }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(`${apiUrl}/bot/settings/prompt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
+      await axios.post(`${apiUrl}/bot/settings/prompt`, { prompt });
     } catch {}
     setSaving(false);
   };

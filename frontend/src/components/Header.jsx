@@ -1,6 +1,6 @@
-import { Shield, Wifi, WifiOff, Star } from "lucide-react";
+import { Shield, Wifi, WifiOff, Star, LogOut, User } from "lucide-react";
 
-export default function Header({ isRunning, telegramConfigured }) {
+export default function Header({ isRunning, telegramConfigured, authUser, authRequired, onLogout }) {
   return (
     <header
       data-testid="app-header"
@@ -70,6 +70,32 @@ export default function Header({ isRunning, telegramConfigured }) {
             </div>
           )}
         </div>
+
+        {/* Auth user info + Logout */}
+        {authRequired && authUser && (
+          <div className="flex items-center gap-2 ml-2 pl-2 border-l border-white/[0.06]">
+            {authUser.photo_url ? (
+              <img
+                src={authUser.photo_url}
+                alt=""
+                className="h-6 w-6 rounded-full border border-white/10"
+              />
+            ) : (
+              <User className="h-4 w-4 text-neutral-500" />
+            )}
+            <span className="text-xs font-mono text-neutral-400 hidden sm:inline">
+              {authUser.first_name}
+            </span>
+            <button
+              onClick={onLogout}
+              className="p-1.5 text-neutral-600 hover:text-red-400 hover:bg-red-500/10
+                         transition-all duration-200 rounded"
+              title="Выйти"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

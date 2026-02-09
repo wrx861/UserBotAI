@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 import { GraduationCap, Scan, Loader2, Trash2, CheckCircle, AlertCircle, MessageSquare, Brain, ToggleLeft, ToggleRight, ChevronDown } from "lucide-react";
 import { Slider } from "../components/ui/slider";
 
@@ -13,9 +14,8 @@ export default function TrainingPanel({ apiUrl, botRunning, defaultOpen = false 
   const [toggling, setToggling] = useState(false);
 
   const fetchStatus = () => {
-    fetch(`${apiUrl}/bot/training/status`)
-      .then((r) => r.json())
-      .then(setStatus)
+    axios.get(`${apiUrl}/bot/training/status`)
+      .then((res) => setStatus(res.data))
       .catch(() => {});
   };
 
@@ -27,29 +27,20 @@ export default function TrainingPanel({ apiUrl, botRunning, defaultOpen = false 
     setScanning(true);
     setScanResult(null);
     try {
-      const res = await fetch(`${apiUrl}/bot/training/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          max_chats: maxChats,
-          messages_per_chat: msgsPerChat,
-        }),
+      const res = await axios.post(`${apiUrl}/bot/training/scan`, {
+        max_chats: maxChats,
+        messages_per_chat: msgsPerChat,
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Ошибка");
-      }
-      const data = await res.json();
-      setScanResult(data);
+      setScanResult(res.data);
       fetchStatus();
     } catch (e) {
-      setScanResult({ error: e.message });
+      setScanResult({ error: e.response?.data?.detail || e.message || "Ошибка" });
     }
     setScanning(false);
   };
 
   const handleReset = async () => {
-    await fetch(`${apiUrl}/bot/training/reset`, { method: "DELETE" });
+    await axios.delete(`${apiUrl}/bot/training/reset`);
     setScanResult(null);
     setShowExamples(false);
     fetchStatus();
@@ -58,9 +49,8 @@ export default function TrainingPanel({ apiUrl, botRunning, defaultOpen = false 
   const handleToggle = async () => {
     setToggling(true);
     try {
-      const res = await fetch(`${apiUrl}/bot/training/toggle`, { method: "POST" });
-      const data = await res.json();
-      setStatus((prev) => prev ? { ...prev, training_enabled: data.training_enabled } : prev);
+      const res = await axios.post(`${apiUrl}/bot/training/toggle`);
+      setStatus((prev) => prev ? { ...prev, training_enabled: res.data.training_enabled } : prev);
     } catch (e) {
       console.error("Toggle error:", e);
     }

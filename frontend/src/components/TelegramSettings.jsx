@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 import { KeyRound, Save, Loader2, Trash2, RotateCcw, ChevronDown } from "lucide-react";
 
 export default function TelegramSettings({ apiUrl, defaultOpen = true }) {
@@ -10,21 +11,15 @@ export default function TelegramSettings({ apiUrl, defaultOpen = true }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${apiUrl}/bot/settings/telegram`)
-      .then(r => r.json())
-      .then(data => { setCreds(data); setLoaded(true); })
+    axios.get(`${apiUrl}/bot/settings/telegram`)
+      .then(res => { setCreds(res.data); setLoaded(true); })
       .catch(() => setLoaded(true));
   }, [apiUrl]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${apiUrl}/bot/settings/telegram`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(creds),
-      });
-      if (!res.ok) throw new Error();
+      await axios.post(`${apiUrl}/bot/settings/telegram`, creds);
     } catch {}
     setSaving(false);
   };
