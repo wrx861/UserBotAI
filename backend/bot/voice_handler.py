@@ -214,11 +214,13 @@ class VoiceHandler:
     async def get_voices(self) -> list:
         """Get list of available ElevenLabs voices with preview URLs and descriptions."""
         if not self.is_configured:
+            logger.warning("ElevenLabs не настроен - нет API ключа")
             return []
 
         def _do_get_voices():
             client = self._get_client()
             try:
+                logger.info("Запрос списка голосов ElevenLabs...")
                 response = client.voices.get_all()
                 voices = []
                 for v in response.voices:
@@ -241,9 +243,16 @@ class VoiceHandler:
                         "description": getattr(v, 'description', None) or "",
                         "labels": labels,
                     })
+                logger.info(f"Получено {len(voices)} голосов ElevenLabs")
                 return voices
             except Exception as e:
-                logger.warning(f"Failed to fetch voices: {e}")
+                error_str = str(e).lower()
+                if "401" in str(e) or "unauthorized" in error_str or "invalid" in error_str:
+                    logger.error(f"ElevenLabs: Невалидный API ключ: {e}")
+                elif "403" in str(e) or "forbidden" in error_str:
+                    logger.error(f"ElevenLabs: Доступ запрещён: {e}")
+                else:
+                    logger.error(f"ElevenLabs: Ошибка получения голосов: {e}")
                 return []
 
         return await asyncio.to_thread(_do_get_voices)
