@@ -1,0 +1,85 @@
+version: "3.8"
+
+services:
+  # ── MongoDB ──────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: support-bot-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - internal
+
+  # ── Backend (FastAPI) ────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: support-bot-backend
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend/media:/app/backend/media
+      - session_data:/app/backend  # Pyrogram session persistence
+    depends_on:
+      - mongo
+    networks:
+      - internal
+
+  # ── Frontend (React) ─────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        REACT_APP_BACKEND_URL: https://${DOMAIN}
+    container_name: support-bot-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  # ── Nginx (Reverse Proxy + SSL) ──────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: support-bot-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/ssl:/etc/ssl/app:ro
+      - certbot_www:/var/www/certbot:ro
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+
+  # ── Certbot (SSL автообновление) ─────────────────────
+  certbot:
+    image: certbot/certbot
+    container_name: support-bot-certbot
+    profiles: ["certbot"]
+    volumes:
+      - certbot_www:/var/www/certbot
+      - ./docker/ssl:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - internal
+
+volumes:
+  mongo_data:
+  session_data:
+  certbot_www:
+
+networks:
+  internal:
+    driver: bridge
