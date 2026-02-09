@@ -1,18 +1,36 @@
 version: "3.8"
 
 services:
+  # ── Backend (FastAPI + Telegram Bot) ──────────────────
   bot:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
     env_file:
       - backend/.env
     ports:
       - "8001:8001"
     volumes:
       - ./backend/media:/app/backend/media
+      - session_data:/app/backend  # Pyrogram session persistence
     depends_on:
       - mongo
     restart: unless-stopped
 
+  # ── Frontend (React) ──────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - bot
+    restart: unless-stopped
+
+  # ── MongoDB ───────────────────────────────────────────
   mongo:
     image: mongo:7
     ports:
@@ -22,3 +40,4 @@ services:
 
 volumes:
   mongo_data:
+  session_data:
