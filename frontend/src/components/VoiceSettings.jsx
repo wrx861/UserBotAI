@@ -262,6 +262,8 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
   const [showKey, setShowKey] = useState(false);
   const [language, setLanguage] = useState("ru");
 
+  const [loadingVoices, setLoadingVoices] = useState(false);
+
   const fetchSettings = useCallback(() => {
     axios.get(`${apiUrl}/bot/settings/voice`)
       .then((res) => {
@@ -274,8 +276,9 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
         setSttModel(data.stt_model || "scribe_v2");
         setLanguage(data.language || "ru");
         setLoading(false);
+        setLoadingVoices(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { setLoading(false); setLoadingVoices(false); });
   }, [apiUrl]);
 
   useEffect(() => {
@@ -301,7 +304,9 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
       setSaved(true);
       if (includeKey) {
         setApiKey("");
-        fetchSettings();
+        setLoadingVoices(true);
+        // Ждём пока бэкенд загрузит голоса с ElevenLabs
+        setTimeout(() => fetchSettings(), 2000);
       }
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -510,6 +515,13 @@ export default function VoiceSettings({ apiUrl, defaultOpen = false }) {
         )}
 
         {/* Voice selection with preview */}
+        {loadingVoices && (
+          <div className="flex items-center gap-2 py-4 justify-center text-xs font-mono text-neutral-400">
+            <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+            Загрузка голосов...
+          </div>
+        )}
+
         {settings?.voices?.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
