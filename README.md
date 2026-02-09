@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://customer-assets.emergentagent.com/job_project-lab-2/artifacts/3dme9ovy_image.png" alt="Support AI UserBot — Панель управления" width="100%" />
+  <img src="" alt="Support AI UserBot — Панель управления" width="100%" />
 </p>
 
 <h1 align="center">Support AI UserBot</h1>
@@ -322,13 +322,19 @@ docker compose -f docker-compose.prod.yml restart
 # Пересборка
 docker compose -f docker-compose.prod.yml up -d --build
 
-# Обновление
-git pull && docker compose -f docker-compose.prod.yml up -d --build
+# ⚡ ОБНОВЛЕНИЕ (рекомендуемый способ)
+bash update.sh
+
+# Обновление вручную (ВАЖНО: используйте docker-compose.prod.yml!)
+git pull && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d --build
 
 # Бэкап MongoDB
 docker compose -f docker-compose.prod.yml exec mongo mongodump --out /data/backup
 docker cp support-bot-mongo:/data/backup ./backup_$(date +%Y%m%d)
 ```
+
+> ⚠️ **ВАЖНО:** Всегда используйте `-f docker-compose.prod.yml` при работе с продакшеном!
+> Команда `docker compose up` без `-f` использует другой файл и не запустит frontend.
 
 ---
 
