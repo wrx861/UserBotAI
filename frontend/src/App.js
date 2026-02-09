@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import "@/App.css";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
-import { LayoutDashboard, Settings, Power, PowerOff } from "lucide-react";
+import { LayoutDashboard, Settings, Power, PowerOff, LogOut } from "lucide-react";
 
+import AuthGate from "./components/AuthGate";
 import Header from "./components/Header";
 import StatusCards from "./components/StatusCards";
 import TerminalFeed from "./components/TerminalFeed";
@@ -21,7 +22,23 @@ import VoiceSettings from "./components/VoiceSettings";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// ── Axios interceptor для JWT ──
+function setupAxiosAuth(token) {
+  if (token) {
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  } else {
+    delete axios.defaults.headers.common["Authorization"];
+  }
+}
+
 function App() {
+  // ── Auth state ──
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+
+  // ── App state ──
   const [tab, setTab] = useState("dashboard");
   const [status, setStatus] = useState(null);
   const [config, setConfig] = useState(null);
@@ -29,6 +46,79 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [mediaTemplates, setMediaTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // ── Проверка авторизации при загрузке ──
+  useEffect(() => {
+    const checkAuth = async () => {
+      // Восстанавливаем токен из localStorage
+      const savedToken = localStorage.getItem("auth_token");
+      if (savedToken) {
+        setupAxiosAuth(savedToken);
+      }
+
+      try {
+        const headers = savedToken ? { Authorization: `Bearer ${savedToken}` } : {};
+        const res = await fetch(`${API}/auth/me`, { headers });
+        const data = await res.json();
+
+        if (!data.auth_required) {
+          // Auth не настроен → показываем AuthGate с формой настройки
+          setAuthRequired(false);
+          setAuthenticated(false);
+          setAuthChecked(true);
+          return;
+        }
+
+        setAuthRequired(true);
+        if (data.authenticated) {
+          setAuthenticated(true);
+          setAuthUser(data.user);
+          setupAxiosAuth(savedToken);
+        } else {
+          setAuthenticated(false);
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("auth_user");
+          setupAxiosAuth(null);
+        }
+      } catch {
+        // Если сервер не отвечает — показываем auth gate
+        setAuthRequired(false);
+        setAuthenticated(false);
+      }
+      setAuthChecked(true);
+    };
+    checkAuth();
+  }, []);
+
+  const handleAuth = useCallback((token, user) => {
+    setupAxiosAuth(token);
+    setAuthenticated(true);
+    setAuthRequired(true);
+    setAuthUser(user);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_user");
+    setupAxiosAuth(null);
+    setAuthenticated(false);
+    setAuthUser(null);
+  }, []);
+
+  // ── Axios interceptor для 401 → автоматический logout ──
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (res) => res,
+      (err) => {
+        if (err?.response?.status === 401 && authenticated) {
+          handleLogout();
+          toast.error("Сессия истекла. Войдите заново.");
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, [authenticated, handleLogout]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -106,6 +196,24 @@ function App() {
   const tgCreds = status?.telegram_configured;
   const phoneFromStatus = status?.phone_number || "";
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#050505" }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-3 w-3 rounded-full bg-[#00F0FF] beacon-active" />
+          <span className="font-mono text-xs text-neutral-500 uppercase tracking-widest">
+            Загрузка...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Если не авторизован — показываем AuthGate
+  if (!authenticated) {
+    return <AuthGate onAuth={handleAuth} />;
+  }
+
   if (loading) {
     return (
       <div
@@ -146,6 +254,9 @@ function App() {
       <Header
         isRunning={status?.is_running}
         telegramConfigured={status?.telegram_configured}
+        authUser={authUser}
+        authRequired={authRequired}
+        onLogout={handleLogout}
       />
 
       {/* Tab Navigation */}
