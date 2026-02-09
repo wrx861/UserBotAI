@@ -812,10 +812,10 @@ class SupportAIBot:
                 # Определяем тип ошибки и показываем понятное сообщение
                 if "429" in error_msg or "quota" in error_lower or "rate" in error_lower or "лимит" in error_lower or "превышен" in error_lower:
                     user_message = "⏳ AI временно перегружен. Попробуйте через минуту."
-                elif "api key" in error_lower or "ключ" in error_lower or "api ключ" in error_lower:
-                    user_message = "🔑 Ошибка API ключа. Администратор должен проверить настройки AI провайдера."
-                elif "модель" in error_lower or "not found" in error_lower or "не найдена" in error_lower:
-                    user_message = "⚙️ Выбранная AI модель недоступна. Попробуйте позже или обратитесь к администратору."
+                elif "api key" in error_lower or "ключ" in error_lower or "api ключ" in error_lower or "invalid" in error_lower:
+                    user_message = "🔑 Ошибка API ключа. Проверьте настройки AI провайдера."
+                elif "модель" in error_lower or "not found" in error_lower or "не найдена" in error_lower or "404" in error_msg:
+                    user_message = "⚙️ Выбранная AI модель недоступна. Попробуйте другую модель."
                 elif "timeout" in error_lower or "время" in error_lower or "deadline" in error_lower:
                     user_message = "⏱️ Превышено время ожидания ответа. Попробуйте снова."
                 elif "safety" in error_lower or "blocked" in error_lower or "безопасност" in error_lower:
@@ -823,13 +823,18 @@ class SupportAIBot:
                 elif "пустой ответ" in error_lower or "empty" in error_lower:
                     user_message = "🤔 AI не смог сформулировать ответ. Попробуйте переформулировать вопрос."
                 elif "изображен" in error_lower or "image" in error_lower:
-                    user_message = "🖼️ Не удалось обработать изображение. Попробуйте отправить другое фото."
+                    user_message = "🖼️ Не удалось обработать изображение. Попробуйте другое фото."
+                elif "import" in error_lower or "module" in error_lower or "установл" in error_lower:
+                    user_message = "📦 Ошибка зависимостей. Обратитесь к администратору."
                 else:
-                    # Для других ошибок показываем краткое сообщение
-                    short_error = error_msg[:150] if len(error_msg) > 150 else error_msg
-                    user_message = f"⚠️ Произошла ошибка. Попробуйте позже.\n\n<code>{short_error}</code>"
+                    # Для других ошибок — показываем БЕЗ HTML чтобы не ломалось
+                    short_error = error_msg[:200] if len(error_msg) > 200 else error_msg
+                    # Убираем символы которые ломают Telegram
+                    short_error = short_error.replace('<', '').replace('>', '').replace('&', '')
+                    user_message = f"⚠️ Ошибка: {short_error}"
                 
-                await message.reply_text(user_message, parse_mode=enums.ParseMode.HTML)
+                # Отправляем БЕЗ HTML parse_mode чтобы избежать ошибок парсинга
+                await message.reply_text(user_message)
                 
             except Exception as send_error:
                 logger.warning(f"Не удалось отправить сообщение об ошибке: {send_error}")
