@@ -107,11 +107,22 @@ class AIClient:
     # ── Gemini (google-genai SDK) ─────────────────────────────
 
     async def _gemini_response(self, chat_id, messages_history, system_prompt, user_text):
-        from google import genai
-        from google.genai import types
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as e:
+            logger.error(f"Не удалось импортировать google-genai: {e}")
+            raise ValueError("Библиотека google-genai не установлена. Установите: pip install google-genai")
 
         key = self._get_key()
-        client = genai.Client(api_key=key)
+        if not key:
+            raise ValueError("Gemini API ключ не задан. Добавьте его в настройках AI провайдера.")
+        
+        try:
+            client = genai.Client(api_key=key)
+        except Exception as e:
+            logger.error(f"Не удалось создать Gemini клиент: {e}")
+            raise ValueError(f"Ошибка инициализации Gemini: {str(e)[:100]}")
 
         # Собираем контекст переписки
         if messages_history and len(messages_history) > 1:
@@ -140,22 +151,82 @@ class AIClient:
                 contents=full_text,
                 config=config,
             )
-            return response.text
+            # Проверяем что response.text существует и не пустой
+            if response is None:
+                raise ValueError("Gemini вернул пустой ответ")
+            if hasattr(response, 'text') and response.text:
+                return response.text
+            # Альтернативный способ получения текста
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and candidate.content:
+                    parts = candidate.content.parts
+                    if parts:
+                        return parts[0].text
+            raise ValueError("Gemini вернул ответ без текста")
 
-        response_text = await asyncio.to_thread(_sync_call)
+        try:
+            response_text = await asyncio.to_thread(_sync_call)
+        except Exception as e:
+            error_str = str(e).lower()
+            error_full = str(e)
+            logger.error(f"Gemini API ошибка [{self.model}]: {error_full}")
+            
+            # Детальная обработка ошибок
+            if "api key not valid" in error_str or "api_key_invalid" in error_str or "invalid api key" in error_str:
+                raise ValueError("Невалидный Gemini API ключ. Проверьте ключ в настройках.")
+            elif "401" in error_str or "unauthenticated" in error_str:
+                raise ValueError("Ошибка аутентификации Gemini. Проверьте API ключ.")
+            elif "403" in error_str or "permission" in error_str:
+                raise ValueError("Нет доступа к Gemini API. Проверьте права API ключа.")
+            elif "404" in error_str or "not found" in error_str or "does not exist" in error_str:
+                raise ValueError(f"Модель {self.model} не найдена. Попробуйте другую модель (например gemini-2.0-flash).")
+            elif "429" in error_str or "quota" in error_str or "rate" in error_str or "resource_exhausted" in error_str:
+                raise ValueError("Превышен лимит запросов Gemini API. Подождите минуту и попробуйте снова.")
+            elif "500" in error_str or "internal" in error_str:
+                raise ValueError("Внутренняя ошибка сервера Gemini. Попробуйте позже.")
+            elif "timeout" in error_str or "deadline" in error_str:
+                raise ValueError("Превышено время ожидания ответа от Gemini. Попробуйте снова.")
+            elif "safety" in error_str or "blocked" in error_str:
+                raise ValueError("Сообщение заблокировано фильтрами безопасности Gemini.")
+            elif "empty" in error_str or "без текста" in error_str or "пустой" in error_str:
+                raise ValueError("Gemini вернул пустой ответ. Попробуйте переформулировать вопрос.")
+            else:
+                # Для неизвестных ошибок показываем краткую версию
+                short_error = error_full[:150] if len(error_full) > 150 else error_full
+                raise ValueError(f"Ошибка Gemini API: {short_error}")
+
+        if not response_text:
+            raise ValueError("Gemini вернул пустой ответ")
+            
         logger.info(f"Gemini ответ [{self.model}] для чата {chat_id}: {response_text[:100]}...")
         return response_text
 
     async def _gemini_image_response(self, chat_id, image_path, system_prompt, user_text):
-        from google import genai
-        from google.genai import types
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as e:
+            logger.error(f"Не удалось импортировать google-genai: {e}")
+            raise ValueError("Библиотека google-genai не установлена.")
 
         key = self._get_key()
-        client = genai.Client(api_key=key)
+        if not key:
+            raise ValueError("Gemini API ключ не задан. Добавьте его в настройках AI провайдера.")
+            
+        try:
+            client = genai.Client(api_key=key)
+        except Exception as e:
+            logger.error(f"Не удалось создать Gemini клиент: {e}")
+            raise ValueError(f"Ошибка инициализации Gemini: {str(e)[:100]}")
 
         # Read and encode image
-        with open(image_path, "rb") as f:
-            image_data = f.read()
+        try:
+            with open(image_path, "rb") as f:
+                image_data = f.read()
+        except Exception as e:
+            logger.error(f"Не удалось прочитать изображение: {e}")
+            raise ValueError("Не удалось прочитать изображение")
 
         mime_type = "image/jpeg"
         if image_path.endswith(".png"):
@@ -177,9 +248,40 @@ class AIClient:
                 contents=[user_text, image_part],
                 config=config,
             )
-            return response.text
+            if response is None:
+                raise ValueError("Gemini вернул пустой ответ")
+            if hasattr(response, 'text') and response.text:
+                return response.text
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and candidate.content:
+                    parts = candidate.content.parts
+                    if parts:
+                        return parts[0].text
+            raise ValueError("Gemini вернул ответ без текста")
 
-        response_text = await asyncio.to_thread(_sync_call)
+        try:
+            response_text = await asyncio.to_thread(_sync_call)
+        except Exception as e:
+            error_str = str(e).lower()
+            error_full = str(e)
+            logger.error(f"Gemini API ошибка (изображение) [{self.model}]: {error_full}")
+            
+            if "api key not valid" in error_str or "api_key_invalid" in error_str:
+                raise ValueError("Невалидный Gemini API ключ.")
+            elif "429" in error_str or "quota" in error_str or "rate" in error_str:
+                raise ValueError("Превышен лимит запросов Gemini API. Подождите минуту.")
+            elif "safety" in error_str or "blocked" in error_str:
+                raise ValueError("Изображение заблокировано фильтрами безопасности Gemini.")
+            elif "404" in error_str or "not found" in error_str:
+                raise ValueError(f"Модель {self.model} не найдена или не поддерживает изображения.")
+            else:
+                short_error = error_full[:150] if len(error_full) > 150 else error_full
+                raise ValueError(f"Ошибка анализа изображения: {short_error}")
+
+        if not response_text:
+            raise ValueError("Gemini вернул пустой ответ при анализе изображения")
+            
         logger.info(f"Gemini анализ изображения [{self.model}] для чата {chat_id}: {response_text[:100]}...")
         return response_text
 
