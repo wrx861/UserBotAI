@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 import { Brain, Save, Loader2, Key, ChevronDown } from "lucide-react";
 
 export default function AISettings({ apiUrl, defaultOpen = false }) {
@@ -12,9 +13,9 @@ export default function AISettings({ apiUrl, defaultOpen = false }) {
   const [showKeys, setShowKeys] = useState({});
 
   useEffect(() => {
-    fetch(`${apiUrl}/bot/settings/ai`)
-      .then((r) => r.json())
-      .then((data) => {
+    axios.get(`${apiUrl}/bot/settings/ai`)
+      .then((res) => {
+        const data = res.data;
         setSettings(data);
         setLocalProvider(data.provider);
         setLocalModel(data.model);
@@ -43,14 +44,10 @@ export default function AISettings({ apiUrl, defaultOpen = false }) {
       if (keyField && apiKeys[keyField] && !apiKeys[keyField].startsWith("***")) {
         keysToSend[keyField] = apiKeys[keyField];
       }
-      await fetch(`${apiUrl}/bot/settings/ai`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: localProvider,
-          model: localModel,
-          api_keys: Object.keys(keysToSend).length ? keysToSend : null,
-        }),
+      await axios.post(`${apiUrl}/bot/settings/ai`, {
+        provider: localProvider,
+        model: localModel,
+        api_keys: Object.keys(keysToSend).length ? keysToSend : null,
       });
     } catch {}
     setSaving(false);
