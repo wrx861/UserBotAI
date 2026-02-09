@@ -592,9 +592,17 @@ async def test_message(req: TestMessageRequest):
     await bot_db.save_message(req.chat_id, "user", req.text, req.username)
     history = await bot_db.get_history(req.chat_id)
 
-    response = await ai_client.get_response(
-        req.chat_id, history, system_prompt, req.text
-    )
+    try:
+        response = await ai_client.get_response(
+            req.chat_id, history, system_prompt, req.text
+        )
+    except ValueError as e:
+        # Понятная ошибка от AI клиента
+        logger.warning(f"AI ошибка в тесте: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка AI в тесте: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка AI: {str(e)[:200]}")
 
     clean_text, media_tags = parse_media_tags(response)
     await bot_db.save_message(req.chat_id, "assistant", clean_text)
