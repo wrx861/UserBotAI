@@ -803,20 +803,40 @@ class SupportAIBot:
                 else:
                     logger.warning(f"Медиа файл не найден: {tag}")
         except Exception as e:
-            logger.error(f"Ошибка обработки сообщения от {chat_id}: {e}")
+            logger.error(f"Ошибка обработки сообщения от {chat_id}: {e}", exc_info=True)
             # Send error message to user so they don't wait forever
             try:
                 error_msg = str(e)
-                if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
-                    await message.reply_text(
-                        "⏳ Извините, AI временно перегружен. Попробуйте через минуту."
-                    )
+                error_lower = error_msg.lower()
+                
+                # Определяем тип ошибки и показываем понятное сообщение
+                if "429" in error_msg or "quota" in error_lower or "rate" in error_lower or "лимит" in error_lower or "превышен" in error_lower:
+                    user_message = "⏳ AI временно перегружен. Попробуйте через минуту."
+                elif "api key" in error_lower or "ключ" in error_lower or "api ключ" in error_lower:
+                    user_message = "🔑 Ошибка API ключа. Администратор должен проверить настройки AI провайдера."
+                elif "модель" in error_lower or "not found" in error_lower or "не найдена" in error_lower:
+                    user_message = "⚙️ Выбранная AI модель недоступна. Попробуйте позже или обратитесь к администратору."
+                elif "timeout" in error_lower or "время" in error_lower or "deadline" in error_lower:
+                    user_message = "⏱️ Превышено время ожидания ответа. Попробуйте снова."
+                elif "safety" in error_lower or "blocked" in error_lower or "безопасност" in error_lower:
+                    user_message = "🛡️ Сообщение заблокировано фильтрами безопасности."
+                elif "пустой ответ" in error_lower or "empty" in error_lower:
+                    user_message = "🤔 AI не смог сформулировать ответ. Попробуйте переформулировать вопрос."
+                elif "изображен" in error_lower or "image" in error_lower:
+                    user_message = "🖼️ Не удалось обработать изображение. Попробуйте отправить другое фото."
                 else:
-                    await message.reply_text(
-                        "⚠️ Произошла ошибка при обработке сообщения. Попробуйте позже."
-                    )
-            except Exception:
-                pass
+                    # Для других ошибок показываем краткое сообщение
+                    short_error = error_msg[:150] if len(error_msg) > 150 else error_msg
+                    user_message = f"⚠️ Произошла ошибка. Попробуйте позже.\n\n<code>{short_error}</code>"
+                
+                await message.reply_text(user_message, parse_mode=enums.ParseMode.HTML)
+                
+            except Exception as send_error:
+                logger.warning(f"Не удалось отправить сообщение об ошибке: {send_error}")
+                try:
+                    await message.reply_text("⚠️ Произошла ошибка при обработке сообщения.")
+                except Exception:
+                    pass
 
     async def _on_admin_message(self, message):
         chat_id = message.chat.id
