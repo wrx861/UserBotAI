@@ -144,10 +144,16 @@ class SupportAIBot:
 
         @self.app.on_message(filters.private & filters.incoming)
         async def handle_incoming(client, message):
+            # Ждём пока клиент полностью инициализируется
+            if not client.is_connected or not client.is_initialized:
+                logger.warning("Получено сообщение но клиент ещё не готов, пропускаем")
+                return
             await self._on_user_message(message)
 
         @self.app.on_message(filters.private & filters.outgoing)
         async def handle_outgoing(client, message):
+            if not client.is_connected or not client.is_initialized:
+                return
             await self._on_admin_message(message)
 
     async def check_session_valid(self):
@@ -635,11 +641,16 @@ class SupportAIBot:
             and (voice_mode == "always" or (voice_mode == "voice_only" and is_voice_input))
         )
 
-        # Сразу показываем правильный статус
-        if will_send_voice:
-            await self.app.send_chat_action(chat_id, enums.ChatAction.RECORD_AUDIO)
-        else:
-            await self.app.send_chat_action(chat_id, enums.ChatAction.TYPING)
+        # Проверяем что клиент запущен перед отправкой действий
+        try:
+            if self.app.is_connected:
+                # Сразу показываем правильный статус
+                if will_send_voice:
+                    await self.app.send_chat_action(chat_id, enums.ChatAction.RECORD_AUDIO)
+                else:
+                    await self.app.send_chat_action(chat_id, enums.ChatAction.TYPING)
+        except Exception as e:
+            logger.warning(f"Не удалось отправить chat action: {e}")
 
         system_prompt = await self._get_system_prompt_async()
         ai_client = await self._get_ai_client()
