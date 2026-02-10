@@ -222,35 +222,49 @@ class VoiceHandler:
             try:
                 logger.info("Запрос списка голосов ElevenLabs...")
                 response = client.voices.get_all()
-                voices = []
-                for v in response.voices:
-                    # Extract labels dict
-                    labels = {}
-                    if hasattr(v, 'labels') and v.labels:
-                        if isinstance(v.labels, dict):
-                            labels = v.labels
-                        else:
-                            try:
-                                labels = dict(v.labels)
-                            except Exception:
-                                labels = {}
+                
+                # Проверяем что response не является HTML страницей
+                if hasattr(response, 'voices'):
+                    voices = []
+                    for v in response.voices:
+                        # Extract labels dict
+                        labels = {}
+                        if hasattr(v, 'labels') and v.labels:
+                            if isinstance(v.labels, dict):
+                                labels = v.labels
+                            else:
+                                try:
+                                    labels = dict(v.labels)
+                                except Exception:
+                                    labels = {}
 
-                    voices.append({
-                        "voice_id": v.voice_id,
-                        "name": v.name,
-                        "category": getattr(v, 'category', 'unknown'),
-                        "preview_url": getattr(v, 'preview_url', None) or "",
-                        "description": getattr(v, 'description', None) or "",
-                        "labels": labels,
-                    })
-                logger.info(f"Получено {len(voices)} голосов ElevenLabs")
-                return voices
+                        voices.append({
+                            "voice_id": v.voice_id,
+                            "name": v.name,
+                            "category": getattr(v, 'category', 'unknown'),
+                            "preview_url": getattr(v, 'preview_url', None) or "",
+                            "description": getattr(v, 'description', None) or "",
+                            "labels": labels,
+                        })
+                    logger.info(f"Получено {len(voices)} голосов ElevenLabs")
+                    return voices
+                else:
+                    logger.error("ElevenLabs вернул неожиданный ответ (возможно HTML)")
+                    return []
             except Exception as e:
                 error_str = str(e).lower()
-                if "401" in str(e) or "unauthorized" in error_str or "invalid" in error_str:
+                error_full = str(e)
+                
+                # Проверяем на HTML в ответе
+                if "<!doctype" in error_full.lower() or "<html" in error_full.lower() or "zendesk" in error_full.lower():
+                    logger.error("ElevenLabs API вернул HTML страницу вместо JSON. Возможно API недоступен в вашем регионе.")
+                    return []
+                elif "401" in str(e) or "unauthorized" in error_str or "invalid" in error_str:
                     logger.error(f"ElevenLabs: Невалидный API ключ: {e}")
                 elif "403" in str(e) or "forbidden" in error_str:
                     logger.error(f"ElevenLabs: Доступ запрещён: {e}")
+                elif "connection" in error_str or "timeout" in error_str:
+                    logger.error(f"ElevenLabs: Ошибка подключения (возможно заблокировано): {e}")
                 else:
                     logger.error(f"ElevenLabs: Ошибка получения голосов: {e}")
                 return []
