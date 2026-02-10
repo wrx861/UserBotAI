@@ -36,18 +36,42 @@ if [ ! -f "docker-compose.prod.yml" ]; then
 fi
 
 # Загружаем домен из .env если есть
+DOMAIN=""
 if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
+    DOMAIN=$(grep -E '^DOMAIN=' .env | cut -d'=' -f2 || echo "")
 fi
 
 echo -e "${GREEN}╔══════════════════════════════════════════╗"
 echo -e "║   Support AI Bot — Обновление            ║"
 echo -e "╚══════════════════════════════════════════╝${NC}"
 
+# Бэкап backend/.env (сохраняем настройки пользователя)
+if [ -f "backend/.env" ]; then
+    cp backend/.env backend/.env.backup
+    print_ok "Бэкап backend/.env создан"
+fi
+
 # 1. Получаем обновления
 print_step "Получение обновлений из Git..."
+git stash --include-untracked 2>/dev/null || true
 git pull --ff-only
 print_ok "Репозиторий обновлён"
+
+# Восстанавливаем backend/.env
+if [ -f "backend/.env.backup" ]; then
+    mv backend/.env.backup backend/.env
+    print_ok "backend/.env восстановлен"
+fi
+
+# Обновляем CORS если домен известен
+if [ -n "$DOMAIN" ]; then
+    if grep -q "CORS_ORIGINS=" backend/.env 2>/dev/null; then
+        # Используем чистую запись без sed
+        grep -v "CORS_ORIGINS=" backend/.env > backend/.env.tmp || true
+        echo "CORS_ORIGINS=https://$DOMAIN" >> backend/.env.tmp
+        mv backend/.env.tmp backend/.env
+    fi
+fi
 
 # 2. Останавливаем контейнеры
 print_step "Остановка контейнеров..."
