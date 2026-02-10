@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="" alt="Support AI UserBot — Панель управления" width="100%" />
-</p>
-
 <h1 align="center">Support AI UserBot</h1>
 
 <p align="center">
