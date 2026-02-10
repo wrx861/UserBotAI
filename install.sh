@@ -112,15 +112,26 @@ print_ok "Docker Compose: $($COMPOSE version 2>/dev/null || echo 'installed')"
 # ── 2. Настройка .env ──────────────────────────────────
 print_step "Настройка окружения..."
 
-if [ ! -f backend/.env ]; then
-    cp backend/.env.example backend/.env
-    sed -i 's|MONGO_URL=.*|MONGO_URL=mongodb://mongo:27017|' backend/.env
-    sed -i "s|CORS_ORIGINS=.*|CORS_ORIGINS=https://$DOMAIN|" backend/.env
-    print_warn "Создан backend/.env — ключи настраиваются в веб-панели"
-else
-    sed -i "s|CORS_ORIGINS=.*|CORS_ORIGINS=https://$DOMAIN|" backend/.env
-    print_ok "backend/.env уже существует (обновлён CORS)"
-fi
+# Всегда создаём чистый backend/.env (только ASCII, без Unicode)
+cat > backend/.env << 'ENVEOF'
+MONGO_URL=mongodb://mongo:27017
+DB_NAME=support_ai_bot
+CORS_ORIGINS=https://$DOMAIN
+TELEGRAM_API_ID=
+TELEGRAM_API_HASH=
+TELEGRAM_PHONE=
+ADMIN_USER_ID=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+SILENCE_DURATION_MIN=30
+HISTORY_LIMIT=20
+ELEVENLABS_API_KEY=
+ENVEOF
+
+# Fix CORS with actual domain (heredoc doesn't expand $DOMAIN inside quotes)
+sed -i "s|CORS_ORIGINS=https://\$DOMAIN|CORS_ORIGINS=https://$DOMAIN|" backend/.env
+
+print_ok "backend/.env created (API keys configured in web panel)"
 
 # Сохраняем домен
 echo "DOMAIN=$DOMAIN" > .env
