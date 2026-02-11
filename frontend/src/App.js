@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import "@/App.css";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
-import { LayoutDashboard, Settings, Power, PowerOff, LogOut } from "lucide-react";
+import { LayoutDashboard, Settings, Power, PowerOff, LogOut, AlertTriangle } from "lucide-react";
 
 import AuthGate from "./components/AuthGate";
 import Header from "./components/Header";
@@ -20,7 +20,9 @@ import AISettings from "./components/AISettings";
 import TrainingPanel from "./components/TrainingPanel";
 import VoiceSettings from "./components/VoiceSettings";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+// Safely get backend URL - handle undefined/empty cases
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = BACKEND_URL ? `${BACKEND_URL}/api` : null;
 
 // ── Axios interceptor для JWT ──
 function setupAxiosAuth(token) {
@@ -31,7 +33,45 @@ function setupAxiosAuth(token) {
   }
 }
 
-function App() {
+// Configuration Error Screen
+function ConfigError() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "#050505" }}>
+      <div className="max-w-md w-full border border-red-500/30 p-6" style={{ background: "#0A0A0A" }}>
+        <div className="flex items-center gap-3 mb-4">
+          <AlertTriangle className="h-6 w-6 text-red-400" />
+          <h1 className="text-lg font-bold text-red-400 font-mono">Configuration Error</h1>
+        </div>
+        <div className="space-y-3 text-sm font-mono">
+          <p className="text-neutral-300">
+            REACT_APP_BACKEND_URL is not configured.
+          </p>
+          <p className="text-neutral-500">
+            This usually happens when:
+          </p>
+          <ul className="list-disc list-inside text-neutral-500 space-y-1 ml-2">
+            <li>The .env file is missing DOMAIN variable</li>
+            <li>Docker build was run without proper environment</li>
+            <li>Frontend was rebuilt without docker-compose</li>
+          </ul>
+          <div className="mt-4 p-3 bg-black/50 border border-white/10">
+            <p className="text-neutral-400 text-xs mb-2">Fix: Rebuild with correct config</p>
+            <code className="text-[#00F0FF] text-xs">
+              docker compose down<br/>
+              docker compose build --no-cache frontend<br/>
+              docker compose up -d
+            </code>
+          </div>
+          <p className="text-neutral-600 text-xs mt-4">
+            Make sure .env file contains: DOMAIN=your-domain.com
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppContent() {
   // ── Auth state ──
   const [authChecked, setAuthChecked] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
@@ -432,6 +472,15 @@ function App() {
       </main>
     </div>
   );
+}
+
+// Main App component with configuration check
+function App() {
+  // Check for configuration error before rendering
+  if (!API) {
+    return <ConfigError />;
+  }
+  return <AppContent />;
 }
 
 export default App;
