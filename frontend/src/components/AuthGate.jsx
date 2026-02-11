@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Shield, Key, AtSign, LogIn, Loader2, AlertCircle } from "lucide-react";
+import { Shield, Key, AtSign, LogIn, Loader2, AlertCircle, AlertTriangle } from "lucide-react";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = BACKEND_URL ? `${BACKEND_URL}/api` : null;
 
 /**
  * Экран авторизации через Telegram:
@@ -21,6 +22,11 @@ export default function AuthGate({ onAuth }) {
   const widgetRef = useRef(null);
 
   const checkConfig = useCallback(async () => {
+    if (!API) {
+      setError("Backend URL is not configured");
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`${API}/auth/config`);
       const data = await res.json();
